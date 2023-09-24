@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 2.8)
+project( ball_tracking )
+find_package( OpenCV REQUIRED )
+include_directories( ${OpenCV_INCLUDE_DIRS} )
+add_executable( cal_hsv get_hsv_threshold.cpp )
+target_link_libraries( cal_hsv ${OpenCV_LIBS} )
+add_executable( ball_tracking ball_detect.cpp )
+target_link_libraries( ball_tracking ${OpenCV_LIBS} )
