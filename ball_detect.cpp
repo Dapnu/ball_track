@@ -1,8 +1,44 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <vector>
+#include <cmath>
+#include "ros/ros.h"
 
+//serial init to arduino
 
 using namespace cv;
+int mapValue(double value, double inMin, double inMax, int outMin, int outMax) {
+    return (int)((value - inMin) / (inMax - inMin) * (outMax - outMin) + outMin);
+}
+class MecanumWheel {
+public:
+    MecanumWheel(double radius) : wheelRadius(radius) {}
+
+    // Calculate individual wheel velocities for given linear and angular velocities
+    std::vector<double> inverseKinematics(double vx, double vy, double omega) {
+        std::vector<double> wheelVelocities(4, 0.0);
+
+        // Define the mecanum wheel geometry (angles in radians)
+        double wheelAngles[4] = {M_PI / 4, -M_PI / 4, -3 * M_PI / 4, 3 * M_PI / 4};
+
+        // Calculate individual wheel velocities
+        for (int i = 0; i < 4; ++i) {
+            wheelVelocities[i] = vx * cos(wheelAngles[i]) + vy * sin(wheelAngles[i]) + wheelRadius * omega;
+        }
+
+        for (int i = 0; i < 4; ++i) {
+            wheelVelocities[i] = mapValue(wheelVelocities[i], -700, 700, -255, 255);
+        }
+
+        return wheelVelocities;
+    }
+
+private:
+    double wheelRadius;
+};
+
+int x, y;
+double wheelRadius = 0.05;  // Radius of mecanum wheels (m)
 
 SimpleBlobDetector::Params params;
 void SetupBlobDetector()
@@ -18,12 +54,13 @@ void SetupBlobDetector()
     params.filterByCircularity = false;
     params.minCircularity = 0.1;
     // Filter by convexity
-    params.filterByConvexity = true;
+    params.filterByConvexity = false;
     params.minConvexity = 0.8;
     // Filter by inertia
     params.filterByInertia = false;
     params.minInertiaRatio = 0.3;
 }
+SerialPort arduino("/dev/ttyACM0");
 
 int main(int argc, char **argv)
 {
@@ -77,6 +114,8 @@ int main(int argc, char **argv)
         // show rectangle/square thing
         Rect rect(400, 500, frame.cols-780, frame.rows-500);
         rectangle(frame, rect, Scalar(0, 255 ,0), 2);
+        int center_x = frame.cols / 2;
+        int center_y = frame.rows / 2;  
 
         // Convert from RGB to HSV color space
         Mat hsv;
@@ -84,11 +123,11 @@ int main(int argc, char **argv)
 
         // Threshold the image based on color, try to calibrate for better results
         int low_H  =   0, 
-            low_S  =  205, 
-            low_V  = 40;
-        int high_H = 255, 
+            low_S  =  102, 
+            low_V  = 149;
+        int high_H = 180, 
             high_S = 255, 
-            high_V = 255;
+            high_V = 236;
         Mat mask;     // might need to calibrate Scalar() values
         inRange(hsv, Scalar(low_H, low_S, low_V), Scalar(high_H, high_S, high_V), mask);
 
@@ -116,14 +155,24 @@ int main(int argc, char **argv)
                 //send position of the BIGGEST blob
                 if(!rect.contains(maxPt))
                 {
-                    int x = (int)maxPt.x;
-                    int y = (int)maxPt.y;
+                    x = (int)maxPt.x - center_x;
+                    y = center_y - (int)maxPt.y;
 
                     printf("X,Y : [ %d, %d ] \n", x, y);
                 }
                 else{
                     printf("di dalam kotak \n");
-                }   
+                }
+                MecanumWheel wheel(wheelRadius);
+                std::vector<double> wheelVelocities = wheel.inverseKinematics(x, y, 0);
+                std::cout << "Wheel velocities: " << wheelVelocities[0] << ", " << wheelVelocities[1] << ", " << wheelVelocities[2] << ", " << wheelVelocities[3] << std::endl;
+                std::string message = std::to_string(wheelVelocities[0]) + "," + std::to_string(wheelVelocities[1]) + "," + std::to_string(wheelVelocities[2]) + "," + std::to_string(wheelVelocities[3]) + "\n";
+                arduino.writeSerialPort(message.c_str(), message.size());
+
+   
+            }else{
+                x = 0;
+                y = 0;
             }
         }
         
@@ -140,10 +189,15 @@ int main(int argc, char **argv)
         
         // Show the image with keypoints
         imshow("Blob detection", img_keypoints);
+
+        //convert x and y to mecanum wheel velocities
+       
+
         
         char c = (char)waitKey(25);
-        if(c == 27 || c == 'q')
+        if(c == 27 || c == 'q'){
             break;
+        }
     }
 
     // Finish processing images

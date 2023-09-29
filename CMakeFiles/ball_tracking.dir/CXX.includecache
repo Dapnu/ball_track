@@ -11,6 +11,12 @@ opencv2/opencv.hpp
 -
 iostream
 -
+vector
+-
+cmath
+-
+ros/ros.h
+/home/roobics/ball_track/ros/ros.h
 
 /usr/include/opencv4/opencv2/calib3d.hpp
 opencv2/core.hpp
